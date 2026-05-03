@@ -80,37 +80,30 @@ Every row in `codas_unified.csv` represents one coda.
 
 ## Important caveats
 
-1. **Gero et al. 2016 Atlantic was excluded after measurement.** Fingerprinting
-   on `(n_clicks, ICIs)` showed that all 4,930 Gero codas appear verbatim in
-   the Sharma 2024 DSWP release across every social unit (1-11). The Gero
-   companion file's WhaleID join attached ambiguous (`6070/6068`) IDs to 146
-   DSWP rows that were otherwise un-attributed, but no codas were unique to
-   Gero. The dataset is preserved in git history but is no longer in the
-   pipeline.
-2. **The birth dataset has no persistent whale IDs.** `SegmentWhale` from the
+- **The birth dataset has no persistent whale IDs.** `SegmentWhale` from the
    source file is preserved as `local_speaker_id` in the form
    `"<recording>_seg<n>"`, which is unique within the file but tells you
    nothing about whether segment 1 in CETI23-277 is the same animal as
    segment 1 in CETI23-278.
-3. **`hersh2022_pacific` has no per-coda timestamps and no individual IDs.**
+- **`hersh2022_pacific` has no per-coda timestamps and no individual IDs.**
    The OSF release exposes only repertoire-day group codes (kept as
    `recording_id`); `whale_photo_id`, `local_speaker_id`, `social_unit`, and
    `time_in_recording_s` are all `NaN` for these rows. Consequently the
    `extra_click` ornament classifier (which needs same-whale temporal
    neighbours) is skipped for the entire Pacific subset. `rhythm` is still
    assigned because that classifier needs only the ICIs.
-4. **Hersh Pacific clan abbreviations are not the EC1/EC2 vocabulary.** The
+- **Hersh Pacific clan abbreviations are not the EC1/EC2 vocabulary.** The
    seven Pacific clans use the labels from Hersh et al. 2022: FP (Four-Plus),
    PALI (Palindrome), PO (Plus-One), REG (Regular), RI (Rapid Increasing),
    SH (Short), SI (Slow-Increasing). 682 codas are unassigned (`clan = NaN`)
    because their parent repertoires fell below the within-clan correlation
    threshold in the source paper.
-5. **Hersh `source_coda_id` is mostly numeric, with two prefixed exceptions.**
+- **Hersh `source_coda_id` is mostly numeric, with two prefixed exceptions.**
    3,113 Galápagos codas (`WatGal###`) are Watkins-archive recordings
    re-annotated by Hersh, and three Southern New Zealand codas (`NZ0071`–
    `NZ0073`) have `latitude`/`longitude = NaN` because the source CSV had
    the literal string `"Unk"` for those coordinates.
-6. **`social_unit` semantics are study-specific.** DSWP uses letter codes
+- **`social_unit` semantics are study-specific.** DSWP uses letter codes
    (`A`, `D`, `F`, …) for persistent matrilines; Hersh leaves it `NaN` (the
    `grpvar` repertoire-day code goes to `recording_id` instead, since it is
    not a persistent unit).
