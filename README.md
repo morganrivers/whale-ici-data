@@ -25,7 +25,7 @@ expand or replace those definitions per dataset.
 | `hersh2021_idcallr` — Hersh et al. 2021 ([MEE](https://doi.org/10.1111/2041-210X.13524)) | 4,269 | Eastern Caribbean + Watkins archive | 0 | 1978-2019 |
 | `begus2026_vowel` — Beguš et al. 2026 ([OSF 9t6qu](https://osf.io/9t6qu/)) | 1,375 | Dominica, Eastern Caribbean | 13 (1,267 codas attributed) | 2014-2016 |
 | `bermant2019_etp` — Bermant et al. 2019 ([Sci Rep 9:12588](https://doi.org/10.1038/s41598-019-48909-4)) | 3,450 | Eastern Tropical Pacific (6 clan types: Regular, Short, FourPlus, PlusOne, Caribbean, Tonga) | 0 | 1985-2014 |
-| **Unified** | **47,934** | | | |
+| **Unified** | **47,942** | | | |
 
 ## Layout
 
@@ -45,16 +45,16 @@ whale-ici-data/
 │   │       └── focal-coarticulation-metadata.csv
 │   ├── intermediate/                 # per-source unified-schema CSVs
 │   └── unified/
-│       └── codas_unified.csv         # final concatenated corpus (47,934 rows)
+│       └── codas_unified.csv         # final concatenated corpus (47,942 rows)
 ├── src/pipeline/
 │   ├── schema.py                     # shared column definitions
 │   ├── A_load_dswp.py
 │   ├── B_load_birth.py
-│   ├── D_merge_unified.py            # entry point — produces codas_unified.csv
 │   ├── F_load_hersh_pacific.py
 │   ├── G_load_gero_vowel.py
 │   ├── H_load_idcallr.py
-│   └── I_load_bermant_etp.py
+│   ├── I_load_bermant_etp.py
+│   └── merge_unified.py            # entry point — produces codas_unified.csv
 ├── requirements.txt
 ├── LICENSE                           # CC BY 4.0
 └── README.md
@@ -64,7 +64,7 @@ whale-ici-data/
 
 ```bash
 pip install -r requirements.txt
-python -m src.pipeline.D_merge_unified
+python -m src.pipeline.merge_unified
 ```
 
 That single command re-runs every loader and rewrites `data/unified/codas_unified.csv`.
@@ -79,7 +79,7 @@ Every row in `codas_unified.csv` represents one coda.
 | `source_doi` | str | DOI of the source publication or data release |
 | `source_coda_id` | str | Original coda identifier within the source file |
 | `recording_id` | str | Recording session identifier (raw, source-specific). DSWP uses date as proxy. |
-| `date` | str | Raw date string from source — **not** normalized; mixed formats (`DD/MM/YYYY`, `YYYY-MM-DD`, ISO datetime `YYYY-MM-DDTHH:MM:SS`). Hersh 2022 Pacific rows matched to the Bermant 2019 ETP supplement carry a precise ISO datetime; unmatched rows carry only a date. |
+| `date` | str | Date or ISO datetime of the coda — **not** normalized across sources; mixed formats. `sharma2024_dswp`: `DD/MM/YYYY`. `hersh2022_pacific`: `YYYY-MM-DD` (unmatched rows) or `YYYY-MM-DDTHH:MM:SS+00:00` (rows matched to Bermant 2019 ETP). `bermant2019_etp`: `YYYY-MM-DDTHH:MM:SS+00:00`. `sharma2025_birth`: `YYYY-MM-DDTHH:MM:SS+00:00` UTC, derived from chained-recording estimation (see *Birth dataset timestamps* in caveats). `begus2026_vowel` and `hersh2021_idcallr`: `YYYY-MM-DD`. |
 | `time_in_recording_s` | float | Seconds from recording start; populated for `sharma2025_birth` and the DSWP/dialogues-joined subset of `sharma2024_dswp` |
 | `n_clicks` | int | Number of clicks in the coda |
 | `coda_duration_s` | float | Sum of ICIs (= time from first to last click) |
@@ -125,6 +125,19 @@ align them on the DSWP rows (or train their own classifier).
    `"<recording>_seg<n>"`, which is unique within the file but tells you
    nothing about whether segment 1 in CETI23-277 is the same animal as
    segment 1 in CETI23-278.
+- **Birth dataset timestamps are chained estimates, not measured recording start times.**
+   The supplementary event table from Sharma et al. 2025 records only two acoustic
+   anchors: the first recording started at 10:53:00 local time (14:53:00 UTC) and
+   the last (CETI23-294) started at 15:29:00 local time on 2023-07-08. Per-recording
+   start times were not released. `B_load_birth.py` assigns each coda an absolute UTC
+   timestamp by sorting recordings numerically (CETI23-277 → CETI23-294, skipping the
+   absent CETI23-284) and chaining them back-to-back from the first anchor.  The
+   cumulative drift from chaining without gaps means that later recordings may be
+   shifted up to ~66 minutes earlier than their true start time relative to the
+   15:29 anchor.  All birth timestamps should be treated as approximate; they
+   correctly preserve within-recording coda ordering and provide a plausible
+   chronology for the birth event but are not suitable for analyses that require
+   sub-minute inter-recording timing precision.
 - **`hersh2022_pacific` has no individual IDs; timestamps are partial.**
    The OSF release exposes only repertoire-day group codes (kept as
    `recording_id`); `whale_photo_id`, `local_speaker_id`, `social_unit`, and
@@ -170,7 +183,7 @@ align them on the DSWP rows (or train their own classifier).
 
 ## Derived columns
 
-`codas_unified.csv` contains derived columns computed by `D_merge_unified.py`
+`codas_unified.csv` contains derived columns computed by `merge_unified.py`
 after all sources are concatenated. They are not part of `UNIFIED_COLUMNS` and
 are not emitted by individual loaders.
 
@@ -181,6 +194,9 @@ are not emitted by individual loaders.
 | `timeofday` | `daytime` · `dawn` · `dusk` · `nighttime` · `NaN` | Broad time-of-day category based on civil twilight boundaries (astral, civil depression 6°). Populated only for sources that expose a clock-time datetime; `NaN` for sources with date-only or year-only timestamps. |
 | `derived_lat` | float · `NaN` | Best-guess latitude for the recording. Copies `latitude` when the source provides per-row coordinates (Hersh 2022 Pacific); otherwise maps the `location` string to a representative centroid (see table below). `NaN` only for the 44 `"NEW (location unresolved)"` rows in `hersh2021_idcallr`. |
 | `derived_lon` | float · `NaN` | Best-guess longitude, same logic as `derived_lat`. |
+| `codas_per_10min` | float · `NaN` | Number of codas produced in a ±5-minute window centred on this coda, divided by 10, as a proxy for instantaneous calling rate. The coda itself is included in the count; division is always by 10 regardless of how much of the window falls within the recording. Computed within each sequence (see *Coverage* below); `NaN` for sources without any temporal information. |
+| `likely_solitary_male` | `True` · `False` · `NaN` | Heuristic flag for likely solitary-male behaviour: `True` when `codas_per_10min ≤ 2` **and** `\|derived_lat\| > 25°` (high-latitude, low calling rate — the context in which lone males are typically encountered). `False` when both values are known but the conditions are not met. `NaN` when either `codas_per_10min` or `derived_lat` is unavailable. |
+| `n_unique_whales_in_sequence` | int · `NaN` | Count of distinct whales identified within the same sequence. Uses `whale_photo_id` (persistent photo-ID) when available; falls back to `local_speaker_id` (within-recording tag) for rows without a photo-ID. `NaN` when fewer than 50 % of codas in the sequence carry any whale identifier. See *Coverage* below for sequence-boundary definition by source. |
 
 **`recording_method` — platform by source:**
 
@@ -195,14 +211,29 @@ are not emitted by individual loaders.
 
 No source in the current corpus uses a fixed (moored) hydrophone array. All `vessel` recordings were made with a towed hydrophone from a small research boat; the `dtag` recording was made with a tag physically attached to the whale.
 
-**Coverage by source:**
+**`timeofday` coverage by source:**
 
 | Source | Rows with `timeofday` | How datetime is obtained |
 |---|---:|---|
-| `hersh2022_pacific` | 13,520 of 24,237 | ISO datetime in `date` column (matched rows only; unmatched rows are date-only) |
+| `hersh2022_pacific` | 13,524 of 24,245 | ISO datetime in `date` column (matched rows only; unmatched rows are date-only) |
 | `bermant2019_etp` | 3,450 of 3,450 | ISO datetime in `date` column; **fixed coordinates** (10 °N, 105 °W — ETP centre) used because no per-coda lat/lon was released |
+| `sharma2025_birth` | 5,731 of 5,731 | ISO datetime in `date` column (chained-recording estimate); fixed Dominica coordinates (15.3 °N, 61.4 °W) |
 | `begus2026_vowel` | 1,139 of 1,375 | Tag-on datetime from `recording_id` + `time_in_recording_s` offset; fixed Dominica coordinates (15.3 °N, 61.4 °W) |
-| all others | 0 | No clock time available |
+| `sharma2024_dswp` | 0 | No clock time in source |
+| `hersh2021_idcallr` | 0 | No clock time in source |
+
+**`codas_per_10min` and `n_unique_whales_in_sequence` coverage by source:**
+
+| Source | Rows with `codas_per_10min` | Rows with `n_unique_whales_in_sequence` | Sequence boundary |
+|---|---:|---:|---|
+| `sharma2025_birth` | 5,731 of 5,731 | 5,731 of 5,731 | Each CETI recording file (`recording_id`) |
+| `hersh2022_pacific` | 13,524 of 24,245 | 0 (no whale IDs) | Repertoire-day group (`recording_id`), using ISO datetime in `date` |
+| `bermant2019_etp` | 3,450 of 3,450 | 0 (no whale IDs) | Source + calendar day (no `recording_id` available) |
+| `sharma2024_dswp` | 3,780 of 8,872 | 3,780 of 8,872 | Dialogue recording session (`recording_id`); only the dialogues-matched subset has timestamps |
+| `begus2026_vowel` | 1,139 of 1,375 | 1,139 of 1,375 | Calendar day (`date`), not `recording_id`; each tag session covers one whale, so day-level grouping aggregates all whales recorded together that day |
+| `hersh2021_idcallr` | 0 | 0 | No temporal or whale-ID information available |
+
+For `codas_per_10min`, the computation uses `time_in_recording_s` where available (pass 1), then falls back to the absolute Unix timestamp derived from the ISO datetime in `date` (pass 2). For `n_unique_whales_in_sequence`, the 50 % threshold is evaluated per sequence: if fewer than half the codas in the sequence carry any whale identifier, the count is left as `NaN` for that entire sequence.
 
 **Classification boundaries** (computed per coda using its local solar timezone, `lon/15` rounded to the nearest hour):
 
@@ -294,8 +325,8 @@ The lookup table (`whale_grammar_coda_types.csv`) was extracted from `whale-gram
    must expose `load() -> pd.DataFrame` returning a frame with exactly
    `schema.UNIFIED_COLUMNS`. (Letter `D` is taken by the merge step; pick
    the next free letter.)
-3. Add the new module to the `loaders` list in `D_merge_unified.py`.
-4. Re-run `python -m src.pipeline.D_merge_unified` and update the table at
+3. Add the new module to the `loaders` list in `merge_unified.py`.
+4. Re-run `python -m src.pipeline.merge_unified` and update the table at
    the top of this README.
 
 ## Datasets considered but not included

@@ -1,7 +1,7 @@
 """Concatenate all per-source intermediate CSVs into the unified corpus.
 
 Re-runs each loader so the pipeline is reproducible end-to-end with one entry point:
-    python -m src.pipeline.D_merge_unified
+    python -m src.pipeline.merge_unified
 """
 import datetime as _dt
 from pathlib import Path
@@ -12,6 +12,11 @@ from . import A_load_dswp, B_load_birth, F_load_hersh_pacific, G_load_gero_vowel
 
 REPO = Path(__file__).resolve().parents[2]
 OUT = REPO / "data" / "unified" / "codas_unified.csv"
+
+# The seven Pacific vocal clans identified by Hersh et al. 2022.
+_PACIFIC_CLANS   = frozenset({"REG", "SH", "FP", "PALI", "PO", "RI", "SI"})
+# Eastern Caribbean clans from the Dominica Sperm Whale Project.
+_CARIBBEAN_CLANS = frozenset({"EC1", "EC2"})
 
 _SUN_CACHE: dict = {}
 
@@ -78,6 +83,15 @@ def _derive_timeofday(df: pd.DataFrame) -> pd.Series:
         bt["_dt"] = pd.to_datetime(bt["date"], format="ISO8601", utc=True)
         for idx, row in bt.iterrows():
             result[idx] = _classify_tod(row["_dt"], ETP_LAT, ETP_LON)
+
+    # ── sharma2025_birth ──────────────────────────────────────────────────────
+    DOM_LAT_B, DOM_LON_B = 15.3, -61.4
+    mask = (df["source"] == "sharma2025_birth") & df["date"].str.contains("T", na=False)
+    bi = df.loc[mask].copy()
+    if len(bi):
+        bi["_dt"] = pd.to_datetime(bi["date"], format="ISO8601", utc=True)
+        for idx, row in bi.iterrows():
+            result[idx] = _classify_tod(row["_dt"], DOM_LAT_B, DOM_LON_B)
 
     # ── begus2026_vowel ───────────────────────────────────────────────────────
     DOM_LAT, DOM_LON = 15.3, -61.4
@@ -185,6 +199,207 @@ def _apply_whale_grammar_coda_types(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def _identity_codas_for(sub_df: pd.DataFrame, repertoire_col: str,
+                         critfact: float = 5, min_codas: int = 25) -> dict:
+    """Return {coda_type: clan} for identity codas in sub_df.
+
+    A coda type is an identity coda for clan X when its mean fractional usage
+    across X's repertoires exceeds critfact × the mean across all other clans,
+    mirroring the criterion in Hersh et al. 2022 (produceclades, critfact=5).
+    Repertoires with fewer than min_codas codas are excluded.
+    """
+    sub = sub_df[
+        sub_df["clan"].notna()
+        & sub_df["coda_type"].notna()
+        & sub_df[repertoire_col].notna()
+    ].copy()
+    rep_size = sub.groupby(repertoire_col).size()
+    sub = sub[sub[repertoire_col].isin(rep_size[rep_size >= min_codas].index)]
+    if sub.empty:
+        return {}
+
+    total = sub.groupby(repertoire_col).size().rename("total")
+    counts = sub.groupby([repertoire_col, "clan", "coda_type"]).size().reset_index(name="n")
+    counts = counts.join(total, on=repertoire_col)
+    counts["frac"] = counts["n"] / counts["total"]
+
+    clan_means = (
+        counts.groupby(["coda_type", "clan"])["frac"]
+        .mean()
+        .unstack("clan", fill_value=0.0)
+    )
+    result: dict = {}
+    for coda_type, row in clan_means.iterrows():
+        best = row.idxmax()
+        best_val = float(row[best])
+        other_mean = float(row.drop(best).mean())
+        if best_val > critfact * (other_mean + 1e-10):
+            result[coda_type] = best
+    return result
+
+
+def _derive_symbolic_marking(df: pd.DataFrame) -> pd.DataFrame:
+    """Add is_clan_coda and is_in_other_clan_territory derived columns."""
+
+    # ── Identity codas ────────────────────────────────────────────────────────
+    # Pacific: repertoire = recording_id (grpvar in raw hersh data)
+    pacific_id = _identity_codas_for(
+        df[df["source"] == "hersh2022_pacific"], "recording_id"
+    )
+    # Caribbean: repertoire = social_unit (family group in DSWP)
+    carib_id = _identity_codas_for(
+        df[df["source"] == "sharma2024_dswp"], "social_unit"
+    )
+
+    # is_clan_coda ────────────────────────────────────────────────────────────
+    # True  = this coda type is an identity coda for this whale's clan.
+    # False = coda type known but not an identity coda for this clan.
+    # NaN   = clan or coda_type unknown, or clan not in a supported system.
+    df["is_clan_coda"] = pd.NA
+
+    pac_mask  = df["clan"].isin(_PACIFIC_CLANS)   & df["coda_type"].notna()
+    carib_mask = df["clan"].isin(_CARIBBEAN_CLANS) & df["coda_type"].notna()
+
+    # .map returns NaN for unmapped keys; NaN != clan string → False (correct)
+    df.loc[pac_mask,   "is_clan_coda"] = (
+        df.loc[pac_mask,   "coda_type"].map(pacific_id) == df.loc[pac_mask,   "clan"]
+    )
+    df.loc[carib_mask, "is_clan_coda"] = (
+        df.loc[carib_mask, "coda_type"].map(carib_id)   == df.loc[carib_mask, "clan"]
+    )
+
+    # is_in_other_clan_territory ──────────────────────────────────────────────
+    # Meaningful only where clans have distinct geographic ranges (Pacific).
+    # True  = dominant clan at the recording location differs from this whale's.
+    # False = whale's clan is dominant at that location.
+    # NaN   = non-Pacific source, missing clan, or location without a loc code.
+    hersh_mask = (
+        (df["source"] == "hersh2022_pacific")
+        & df["clan"].isin(_PACIFIC_CLANS)
+        & df["location"].notna()
+    )
+    sub = df.loc[hersh_mask, ["location", "clan"]].copy()
+    sub["loc_code"] = sub["location"].str.extract(r'\((\w+)\)$', expand=False)
+
+    loc_counts = (
+        sub[sub["loc_code"].notna()]
+        .groupby(["loc_code", "clan"]).size()
+        .reset_index(name="n")
+    )
+    dom_idx = loc_counts.groupby("loc_code")["n"].idxmax()
+    dominant_by_loc = loc_counts.loc[dom_idx].set_index("loc_code")["clan"].to_dict()
+
+    sub["dominant"] = sub["loc_code"].map(dominant_by_loc)
+    has_dom = sub["dominant"].notna()
+
+    df["is_in_other_clan_territory"] = pd.NA
+    df.loc[sub.index[has_dom], "is_in_other_clan_territory"] = (
+        (sub.loc[has_dom, "dominant"] != sub.loc[has_dom, "clan"]).values
+    )
+
+    # Print identity coda summary for transparency
+    from collections import defaultdict
+    for label, id_map in [("Pacific", pacific_id), ("Caribbean", carib_id)]:
+        by_clan: dict = defaultdict(list)
+        for ct, cl in sorted(id_map.items()):
+            by_clan[cl].append(ct)
+        print(f"\nIdentity codas — {label}:")
+        for clan in sorted(by_clan):
+            print(f"  {clan}: {sorted(by_clan[clan])}")
+
+    return df
+
+
+def _derive_coda_rate(df: pd.DataFrame) -> pd.Series:
+    """Codas per 10 minutes: count codas within ±5 min in the same sequence, divided by 10.
+
+    Two passes:
+    1. Rows with time_in_recording_s: use that offset, grouped by recording_id.
+    2. Remaining rows with a full ISO datetime in `date` (contains "T"): convert to
+       Unix seconds and group by recording_id when available, else by source+day.
+
+    The coda itself is included in the count.  Division is always by 10 regardless
+    of how much of the window falls within the recording.
+    """
+    import numpy as np
+    result = pd.Series(np.nan, index=df.index, dtype="float64")
+
+    def _fill_group(t_arr, idx):
+        lo = np.searchsorted(t_arr, t_arr - 300.0, side="left")
+        hi = np.searchsorted(t_arr, t_arr + 300.0, side="right")
+        result.loc[idx] = (hi - lo).astype(float) / 10.0
+
+    # Pass 1: time_in_recording_s available
+    mask1 = df["time_in_recording_s"].notna() & df["recording_id"].notna()
+    sub1 = df.loc[mask1, ["recording_id", "time_in_recording_s"]]
+    for _rec_id, grp in sub1.groupby("recording_id"):
+        grp_s = grp.sort_values("time_in_recording_s")
+        _fill_group(grp_s["time_in_recording_s"].values, grp_s.index)
+
+    # Pass 2: full ISO datetime in `date`, not yet filled
+    mask2 = result.isna() & df["date"].str.contains("T", na=False)
+    sub2 = df.loc[mask2, ["source", "recording_id", "date"]].copy()
+    sub2["_t"] = (
+        pd.to_datetime(sub2["date"], format="ISO8601", utc=True, errors="coerce")
+        .astype("int64") / 1e9
+    )
+    sub2 = sub2[sub2["_t"].notna()]
+    # Group by recording_id when present; fall back to source+day
+    sub2["_grp"] = sub2["recording_id"].where(
+        sub2["recording_id"].notna(),
+        sub2["source"] + "_" + sub2["date"].str[:10],
+    )
+    for _grp_key, grp in sub2.groupby("_grp"):
+        grp_s = grp.sort_values("_t")
+        _fill_group(grp_s["_t"].values, grp_s.index)
+
+    return result
+
+
+def _derive_likely_solitary_male(df: pd.DataFrame) -> pd.Series:
+    """True when codas_per_10min <= 2 AND |derived_lat| > 25; NaN if either is unknown."""
+    result = pd.Series(pd.NA, index=df.index, dtype="object")
+    has_rate = df["codas_per_10min"].notna()
+    has_lat = df["derived_lat"].notna()
+    evaluable = has_rate & has_lat
+    result.loc[evaluable] = (
+        (df.loc[evaluable, "codas_per_10min"] <= 2.0)
+        & (df.loc[evaluable, "derived_lat"].abs() > 25.0)
+    )
+    return result
+
+
+def _derive_unique_whales(df: pd.DataFrame) -> pd.Series:
+    """Count unique whales per sequence.
+
+    Uses whale_photo_id first; falls back to local_speaker_id for rows without a
+    photo-ID.  Returns NaN for a sequence where fewer than 50% of codas carry any
+    whale identifier.
+
+    Sequence key:
+      begus2026_vowel — grouped by date (day), because each recording_id is a
+                        single-whale tag session; multiple whales tagged the same
+                        day are part of the same social encounter.
+      all other sources — grouped by recording_id.
+    """
+    result = pd.Series(pd.NA, index=df.index, dtype="Int64")
+
+    whale_id = df["whale_photo_id"].where(df["whale_photo_id"].notna(), df["local_speaker_id"])
+
+    seq_key = df["recording_id"].copy().astype(object)
+    begus_mask = df["source"] == "begus2026_vowel"
+    seq_key.loc[begus_mask] = df.loc[begus_mask, "date"]
+
+    for _key, grp_idx in df.groupby(seq_key).groups.items():
+        group_whale = whale_id.loc[grp_idx]
+        n_total = len(group_whale)
+        n_identified = int(group_whale.notna().sum())
+        if n_total > 0 and n_identified / n_total >= 0.5:
+            result.loc[grp_idx] = int(group_whale.dropna().nunique())
+
+    return result
+
+
 def main():
     loaders = [
         (A_load_dswp, "A_dswp.csv"),
@@ -220,6 +435,11 @@ def main():
 
     df["timeofday"] = _derive_timeofday(df)
     df["derived_lat"], df["derived_lon"] = _derive_coords(df)
+    df = _derive_symbolic_marking(df)
+
+    df["codas_per_10min"] = _derive_coda_rate(df)
+    df["likely_solitary_male"] = _derive_likely_solitary_male(df)
+    df["n_unique_whales_in_sequence"] = _derive_unique_whales(df)
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(OUT, index=False)
@@ -231,9 +451,14 @@ def main():
                with_clan=("clan", lambda s: s.notna().sum()),
                with_coda_type=("coda_type", lambda s: s.notna().sum()),
                with_time=("time_in_recording_s", lambda s: s.notna().sum()),
-               with_timeofday=("timeofday", lambda s: s.notna().sum()))
+               with_timeofday=("timeofday", lambda s: s.notna().sum()),
+               is_clan_coda_n=("is_clan_coda", lambda s: s.notna().sum()),
+               is_other_terr_n=("is_in_other_clan_territory", lambda s: s.notna().sum()),
+               with_coda_rate=("codas_per_10min", lambda s: s.notna().sum()),
+               likely_solitary_male_n=("likely_solitary_male", lambda s: s.notna().sum()),
+               with_unique_whales=("n_unique_whales_in_sequence", lambda s: s.notna().sum()))
     )
-    print(f"D_merge_unified: wrote {len(df):,} rows -> {OUT.relative_to(REPO)}")
+    print(f"merge_unified: wrote {len(df):,} rows -> {OUT.relative_to(REPO)}")
     print(summary.to_string())
 
 
