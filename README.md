@@ -265,7 +265,7 @@ The `coda_type` column uses the DSWP alphanumeric notation (e.g. `5R3`, `1+1+3`,
 | `sharma2025_birth` | 5,551 | 5,731 | `pacific-matched` / `discovery-cluster` / `discovery-noise` — see below |
 | `bermant2019_etp` | 3,448 | 3,450 | `source-raw` — Bermant 2019 numeric codes (**different vocabulary**, not DSWP-comparable) |
 | `hersh2021_idcallr` | 0 | 4,269 | — (no coda-type annotations in the source release) |
-| `begus2026_vowel` | 0 | 1,375 | — (codatype used internally for ICI reconstruction but not emitted; see caveats) |
+| `begus2026_vowel` | 1,375 | 1,375 | `source-raw` — DSWP alphanumeric labels from `codamd.csv` |
 
 ### Hersh 2022 Pacific and Sharma 2025 birth: labels from whale-grammar
 
@@ -281,11 +281,11 @@ The lookup table (`whale_grammar_coda_types.csv`) was extracted from `whale-gram
 
 | `coda_type_origin` | Count | Meaning |
 |---|---:|---|
-| `source-raw` | 12,167 | Copied verbatim from source publication |
+| `source-raw` | 13,542 | Copied verbatim from source publication |
 | `pacific-matched` | 22,945 | kNN-matched to a DSWP anchor type |
 | `discovery-cluster` | 4,029 | New type discovered by OPTICSxi |
 | `discovery-noise` | 2,014 | Rejected by OPTICSxi; no stable cluster |
-| `NaN` | 6,787 | No label assigned |
+| `NaN` | 5,412 | No label assigned |
 
 ## Adding another source
 

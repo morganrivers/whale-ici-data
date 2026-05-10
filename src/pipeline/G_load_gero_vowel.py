@@ -150,6 +150,7 @@ def load() -> pd.DataFrame:
             "coda_duration_s": duration,
             "whale_photo_id": str(r["whale"]) if pd.notna(r["whale"]) else np.nan,
             "local_speaker_id": str(r["whale"]) if pd.notna(r["whale"]) else np.nan,
+            "coda_type": codatype if codatype not in ("nan", "", "None") else np.nan,
             "social_unit": np.nan,
             "clan": np.nan,
             "location": LOCATION,

@@ -177,7 +177,7 @@ def _apply_whale_grammar_coda_types(df: pd.DataFrame) -> pd.DataFrame:
     source_raw_mask = (
         df["coda_type"].notna()
         & ~override_mask
-        & df["source"].isin({"sharma2024_dswp", "bermant2019_etp"})
+        & df["source"].isin({"sharma2024_dswp", "bermant2019_etp", "begus2026_vowel"})
     )
     df.loc[source_raw_mask, "coda_type_origin"] = "source-raw"
 
