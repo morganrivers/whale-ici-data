@@ -136,6 +136,7 @@ def _row_from_dominica(r, dialogue_meta):
         "local_speaker_id": whale_local if whale_local is not None else np.nan,
         "social_unit": str(r["Unit"]),
         "clan": str(r["Clan"]),
+        "coda_type": str(r["CodaType"]) if pd.notna(r["CodaType"]) else np.nan,
         "location": "Dominica, Eastern Caribbean",
         "latitude": np.nan,
         "longitude": np.nan,

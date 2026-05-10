@@ -2,6 +2,12 @@
 
 All loader scripts must emit DataFrames conforming to UNIFIED_COLUMNS.
 ICI columns past `n_clicks - 1` are NaN, not 0.
+
+This repository deliberately stores only raw ICIs and provenance/identification
+metadata. Derived classifications (rhythm cluster, ornament/extra_click flag,
+tempo bucket, rubato, etc.) are speculative processing and live downstream
+(e.g. in whale-grammar), where each consumer can choose its own classifier and,
+for non-Dominica clans, train its own templates.
 """
 
 MAX_ICI = 40
@@ -21,11 +27,10 @@ UNIFIED_COLUMNS = [
     "local_speaker_id",    # within-recording speaker tag, NaN if unknown
     "social_unit",         # original social unit identifier (study-specific)
     "clan",                # vocal clan label (e.g. "EC1"), NaN if unknown
+    "coda_type",           # coda type label from source classification (notation is source-specific)
     "location",            # geographic region (text)
     "latitude",            # decimal degrees; NaN if source did not release per-coda coordinates
     "longitude",           # decimal degrees; NaN if source did not release per-coda coordinates
-    "rhythm",              # 0..17 rhythm cluster id (Sharma 2024 numbering); NaN if not classifiable
-    "extra_click",         # 0/1 ornament flag; NaN where neighbour timing isn't available
 ] + ICI_COLUMNS
 
 
