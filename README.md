@@ -87,10 +87,14 @@ Every row in `codas_unified.csv` represents one coda.
 | `local_speaker_id` | str | Within-recording speaker tag (birth dataset only); **not** comparable across recordings |
 | `social_unit` | str | Original social-unit identifier (study-specific; not cross-source comparable) |
 | `clan` | str | Vocal clan label (`EC1`, `EC2`, `FP`, `PALI`, `PO`, `REG`, `RI`, `SH`, `SI`, `Regular`, `Short`, …); `NaN` if unknown |
-| `coda_type` | str | Coda type label from the source paper's classification system. **Notation is source-specific and not cross-source comparable**: DSWP uses alphanumeric labels (`5R3`, `1+1+3`, `4D`); Hersh 2022 uses numeric codes (`510`, `59`); Bermant 2019 ETP uses numeric codes (`599`, `899`). `NaN` if the source did not include a coda type. |
+| `coda_type` | str | Coda type label in DSWP alphanumeric notation (e.g. `5R3`, `1+1+3`, `4D`) where available. See *Coda type classification* below for coverage and sources. `NaN` if unclassified. |
+| `coda_type_origin` | str | How the `coda_type` label was produced. `source-raw` = copied verbatim from the source publication; `pacific-matched` = assigned by kNN matching to a DSWP anchor in [whale-grammar](https://github.com/morganrivers/whale-grammar); `discovery-cluster` = OPTICSxi cluster discovered in [whale-grammar](https://github.com/morganrivers/whale-grammar); `discovery-noise` = rejected by OPTICSxi (treated as noise); `NaN` = no label assigned. |
 | `location` | str | Geographic region (free text). Hersh Pacific rows include the original abbreviation, e.g. `"Galapagos Islands (GAL)"`. |
 | `latitude` | float | Decimal degrees of recording location. Currently populated only for Hersh 2022 Pacific rows; `NaN` for other sources. |
 | `longitude` | float | Decimal degrees of recording location. Same coverage caveat as `latitude`. |
+| `derived_lat` | float | Best-guess latitude: copies `latitude` when the source provides per-row coordinates; otherwise looks up a representative centroid from the `location` string (see *Derived columns* below). `NaN` only for the 44 `"NEW (location unresolved)"` rows. |
+| `derived_lon` | float | Best-guess longitude, same logic as `derived_lat`. |
+| `recording_method` | str | Recording platform — see *Derived columns* below. |
 | `ICI1` … `ICI40` | float | Inter-click intervals in seconds. `NaN` past `n_clicks - 1`. Max observed length is 40 clicks (birth dataset). |
 
 For Sharma 2024's labelled DSWP subset (rhythm cluster ids and ornament
@@ -149,11 +153,11 @@ align them on the DSWP rows (or train their own classifier).
    abbreviations; the Caribbean-clan rows (476) represent Caribbean-dialect
    whales encountered in the Pacific, not Dominica whales. No per-coda
    coordinates were released; `latitude`, `longitude` are `NaN`.
-- **`coda_type` notation is not cross-source comparable.** Each source uses
-   its own classification vocabulary. Do not compare numeric codes between
-   `hersh2022_pacific` (e.g. `510`) and `bermant2019_etp` (e.g. `599`); they
-   are from different systems. The DSWP alphanumeric codes (`5R3`, `1+1+3`)
-   are yet another vocabulary.
+- **`bermant2019_etp` `coda_type` uses a different numeric vocabulary.** The
+   3,448 labelled ETP rows carry numeric codes from the Bermant 2019 paper
+   (e.g. `599`, `899`). These are **not** comparable to the DSWP alphanumeric
+   labels used by every other labelled source; do not merge them as if they
+   were the same system.
 - **Hersh `source_coda_id` is mostly numeric, with two prefixed exceptions.**
    3,113 Galápagos codas (`WatGal###`) are Watkins-archive recordings
    re-annotated by Hersh, and three Southern New Zealand codas (`NZ0071`–
@@ -163,6 +167,125 @@ align them on the DSWP rows (or train their own classifier).
    (`A`, `D`, `F`, …) for persistent matrilines; Hersh leaves it `NaN` (the
    `grpvar` repertoire-day code goes to `recording_id` instead, since it is
    not a persistent unit).
+
+## Derived columns
+
+`codas_unified.csv` contains derived columns computed by `D_merge_unified.py`
+after all sources are concatenated. They are not part of `UNIFIED_COLUMNS` and
+are not emitted by individual loaders.
+
+| Column | Values | Description |
+|---|---|---|
+| `recording_method` | `vessel` · `dtag` | Recording platform (see table below). |
+| `coda_type_origin` | `source-raw` · `pacific-matched` · `discovery-cluster` · `discovery-noise` · `NaN` | How the `coda_type` label was produced. See *Coda type classification* below. |
+| `timeofday` | `daytime` · `dawn` · `dusk` · `nighttime` · `NaN` | Broad time-of-day category based on civil twilight boundaries (astral, civil depression 6°). Populated only for sources that expose a clock-time datetime; `NaN` for sources with date-only or year-only timestamps. |
+| `derived_lat` | float · `NaN` | Best-guess latitude for the recording. Copies `latitude` when the source provides per-row coordinates (Hersh 2022 Pacific); otherwise maps the `location` string to a representative centroid (see table below). `NaN` only for the 44 `"NEW (location unresolved)"` rows in `hersh2021_idcallr`. |
+| `derived_lon` | float · `NaN` | Best-guess longitude, same logic as `derived_lat`. |
+
+**`recording_method` — platform by source:**
+
+| Source | `recording_method` | Platform | Determination |
+|---|---|---|---|
+| `sharma2024_dswp` | `vessel` | Small research vessel + towed hydrophone array; Dominica fieldwork | Sharma et al. 2024, Nat Comm §Methods ("vessel-based monitoring") |
+| `sharma2025_birth` | `dtag` | CETI hydrophone bio-logging tags (DTags) suction-cupped to whales | B_load_birth.py docstring: "CETI hydrophone tags"; Sharma et al. 2025, Sci Rep §Methods |
+| `hersh2022_pacific` | `vessel` | Research vessels across multiple labs (Rendell, Whitehead) and the Watkins historical archive (also vessel-based) | Hersh et al. 2022, PNAS Table S1 lists all contributing research groups, all vessel-based |
+| `hersh2021_idcallr` | `vessel` | Research vessels (Rendell BAL, Weilgart & Whitehead AtPAN/GOM) and Watkins archive | Hersh et al. 2021, MEE §Data; all contributing studies used vessel-deployed hydrophones |
+| `begus2026_vowel` | `vessel` | DSWP Dominica vessel (same platform as `sharma2024_dswp`) | Beguš et al. 2026, OSF 9t6qu §Methods; G_load_gero_vowel.py docstring: "same traditional codatype vocabulary" as DSWP |
+| `bermant2019_etp` | `vessel` | Research vessel in the Eastern Tropical Pacific | Bermant et al. 2019, Sci Rep 9:12588 §Methods |
+
+No source in the current corpus uses a fixed (moored) hydrophone array. All `vessel` recordings were made with a towed hydrophone from a small research boat; the `dtag` recording was made with a tag physically attached to the whale.
+
+**Coverage by source:**
+
+| Source | Rows with `timeofday` | How datetime is obtained |
+|---|---:|---|
+| `hersh2022_pacific` | 13,520 of 24,237 | ISO datetime in `date` column (matched rows only; unmatched rows are date-only) |
+| `bermant2019_etp` | 3,450 of 3,450 | ISO datetime in `date` column; **fixed coordinates** (10 °N, 105 °W — ETP centre) used because no per-coda lat/lon was released |
+| `begus2026_vowel` | 1,139 of 1,375 | Tag-on datetime from `recording_id` + `time_in_recording_s` offset; fixed Dominica coordinates (15.3 °N, 61.4 °W) |
+| all others | 0 | No clock time available |
+
+**Classification boundaries** (computed per coda using its local solar timezone, `lon/15` rounded to the nearest hour):
+
+- **dawn** — civil twilight start to sunrise
+- **daytime** — sunrise to sunset
+- **dusk** — sunset to civil twilight end
+- **nighttime** — outside civil twilight (before dawn or after dusk)
+
+All timestamps are treated as UTC. The `bermant2019_etp` classification uses a single representative ETP coordinate and will be off by up to ~1 hour near the coast; treat it as approximate.
+
+**`derived_lat` / `derived_lon` location centroids:**
+
+| `location` value | `derived_lat` | `derived_lon` |
+|---|---:|---:|
+| Dominica, Eastern Caribbean | 15.30 | −61.40 |
+| Dominica, Eastern Caribbean (live birth event) | 15.30 | −61.40 |
+| Eastern Caribbean, Watkins archive (CAR) | 15.00 | −63.00 |
+| Eastern Tropical Pacific | 10.00 | −105.00 |
+| Galapagos Islands (GAL) | −0.95 | −90.96 |
+| Northern Chile (CHL_N) | −20.00 | −70.00 |
+| Southern Chile (CHL_S) | −45.00 | −73.00 |
+| Ecuador (ECU) | −2.00 | −80.00 |
+| Peru (PER) | −10.00 | −78.00 |
+| Balearic Islands (BAL) | 39.50 | 2.80 |
+| Tonga (TON) | −20.00 | −175.00 |
+| Ogasawara Islands of Japan (JPN_Og) | 27.10 | 142.20 |
+| Kumano coast of Japan (JPN_Ku) | 33.80 | 136.20 |
+| Kiribati (KIR) | 1.87 | −157.36 |
+| Jarvis Island (JAR) | −0.37 | −160.02 |
+| Papua New Guinea (PNG) | −6.00 | 147.00 |
+| Atlantic Panama (AtPAN) | 9.00 | −79.50 |
+| Panama (PAN) | 8.50 | −79.50 |
+| Mariana Islands (MNP) | 15.20 | 145.80 |
+| Baker Island (BAK) | 0.19 | −176.47 |
+| Equatorial South Pacific (ESP) | −5.00 | −140.00 |
+| Midway Atoll (MID) | 28.20 | −177.40 |
+| Sea of Cortez (SOC) | 27.00 | −110.00 |
+| Southern New Zealand (NZL_S) | −46.00 | 168.00 |
+| Northern New Zealand (NZL_N) | −36.00 | 175.00 |
+| SGaan Kinghlas-Bowie Seamount (BOW) | 53.00 | −142.00 |
+| Gulf of Mexico (GOM) | 24.00 | −90.00 |
+| Easter Island (EAS) | −27.10 | −109.30 |
+| Nauru (NRU) | −0.53 | 166.90 |
+| Marquesas Islands (MRQ) | −9.00 | −139.50 |
+| Palau (PAL) | 7.50 | 134.50 |
+| NEW (location unresolved) (NEW) | NaN | NaN |
+
+Rows in `hersh2022_pacific` with per-coda coordinates use those exact values instead of the centroid.
+
+## Coda type classification
+
+The `coda_type` column uses the DSWP alphanumeric notation (e.g. `5R3`, `1+1+3`, `4D`) as a common vocabulary wherever possible. Labels come from two sources: the original publication's own annotation, and the [whale-grammar](https://github.com/morganrivers/whale-grammar) classifier.
+
+### Coverage
+
+| Source | Rows with `coda_type` | Rows total | `coda_type_origin` |
+|---|---:|---:|---|
+| `sharma2024_dswp` | 8,719 | 8,872 | `source-raw` — DSWP alphanumeric labels copied from the source CSV |
+| `hersh2022_pacific` | 23,437 | 24,245 | `pacific-matched` / `discovery-cluster` / `discovery-noise` — see below |
+| `sharma2025_birth` | 5,551 | 5,731 | `pacific-matched` / `discovery-cluster` / `discovery-noise` — see below |
+| `bermant2019_etp` | 3,448 | 3,450 | `source-raw` — Bermant 2019 numeric codes (**different vocabulary**, not DSWP-comparable) |
+| `hersh2021_idcallr` | 0 | 4,269 | — (no coda-type annotations in the source release) |
+| `begus2026_vowel` | 0 | 1,375 | — (codatype used internally for ICI reconstruction but not emitted; see caveats) |
+
+### Hersh 2022 Pacific and Sharma 2025 birth: labels from whale-grammar
+
+The `hersh2022_pacific` source was published with its own numeric coda-type system that is not compatible with the DSWP vocabulary. The `sharma2025_birth` source had no coda-type annotations at all. Both sets of labels were therefore generated by the [whale-grammar](https://github.com/morganrivers/whale-grammar) classifier and are stored here for convenience in `data/raw/whale_grammar_coda_types.csv`.
+
+The whale-grammar classifier is a three-pass hybrid (documented in that repo):
+
+1. **DSWP anchor lock** — every `sharma2024_dswp` row whose published label is a non-NOISE type is locked to that label (`origin = dswp-real`; not propagated to this corpus because the raw label already exists).
+2. **kNN matching** — for each coda length 3–10, a k=5 nearest-neighbour classifier trained on DSWP anchors is applied to non-DSWP codas. A coda is accepted (`origin = pacific-matched`) if its distance to the predicted type's centroid is within a per-type tolerance τ (99th-percentile within-DSWP distance, floored at 0.10 s).
+3. **OPTICSxi discovery** — DSWP NOISE rows and kNN rejects form a residual pool. ELKI 0.7.1 OPTICSxi (ξ = 0.04, minPts = 10) clusters this pool per length; clusters with ≥ 10 members become new Pacific-discovered types (`origin = discovery-cluster`); the rest are noise (`origin = discovery-noise`).
+
+The lookup table (`whale_grammar_coda_types.csv`) was extracted from `whale-grammar/data/classified/codas_classified.csv` (column `coda_type_gero21`) and joined on `(source, source_coda_id)`. The `coda_type_origin` column records which pass produced each label.
+
+| `coda_type_origin` | Count | Meaning |
+|---|---:|---|
+| `source-raw` | 12,167 | Copied verbatim from source publication |
+| `pacific-matched` | 22,945 | kNN-matched to a DSWP anchor type |
+| `discovery-cluster` | 4,029 | New type discovered by OPTICSxi |
+| `discovery-noise` | 2,014 | Rejected by OPTICSxi; no stable cluster |
+| `NaN` | 6,787 | No label assigned |
 
 ## Adding another source
 
