@@ -12,6 +12,10 @@ not pass the within-clan correlation threshold (clan = NaN). 3,113 of the
 Galapagos codas are Watkins-archive recordings re-annotated by Hersh and carry
 string IDs of the form WatGal### in the source `coda_number` column.
 
+Clan labels are kept as-is from the ETP file for Caribbean, Tonga. 
+REG, SH, FP, PO are converted to standardized Bermant Regular, Short, FourPlus,
+PlusOne.
+
 Caveats:
 - No persistent whale photo-ID or per-recording timestamp: every coda has
   NaN for `whale_photo_id`, `local_speaker_id`, and `time_in_recording_s`,
@@ -112,6 +116,13 @@ LOC_TO_REGION = {
     "TON":    "Tonga",
 }
 
+CLAN_MAPPING = {
+    "REG": "Regular",
+    "SH": "Short",
+    "FP": "FourPlus",
+    "PO": "PlusOne",
+}
+
 ICI_IN = [f"ICI{i}" for i in range(1, 31)]
 
 
@@ -140,7 +151,10 @@ def load() -> pd.DataFrame:
         region = LOC_TO_REGION.get(loc_abbr, loc_abbr)
         location = f"{region} ({loc_abbr})" if loc_abbr else np.nan
 
-        clan = r["clan_name"] if pd.notna(r["clan_name"]) else np.nan
+        # clan = r["clan_name"] if pd.notna(r["clan_name"]) else np.nan
+        raw_clan = r["clan_name"]
+        clan = CLAN_MAPPING.get(raw_clan, raw_clan) if pd.notna(raw_clan) else np.nan
+
         coda_type_raw = r.get("coda_type", np.nan)
         coda_type = str(int(coda_type_raw)) if pd.notna(coda_type_raw) else np.nan
 

@@ -13,6 +13,13 @@ from . import A_load_dswp, B_load_birth, F_load_hersh_pacific, G_load_gero_vowel
 REPO = Path(__file__).resolve().parents[2]
 OUT = REPO / "data" / "unified" / "codas_unified.csv"
 
+# ── Morpheme constants (match whale-grammar morpheme_discovery.py) ─────────────
+_N_BINS = 4
+_LABELS = "ABCD"
+_MIN_CLICKS = 3
+_MAX_CLICKS = 40
+_MORFESSOR_PATH = REPO / "data" / "morfessor_n4.bin"
+
 # The seven Pacific vocal clans identified by Hersh et al. 2022.
 _PACIFIC_CLANS   = frozenset({"REG", "SH", "FP", "PALI", "PO", "RI", "SI"})
 # Eastern Caribbean clans from the Dominica Sperm Whale Project.
@@ -369,6 +376,121 @@ def _derive_likely_solitary_male(df: pd.DataFrame) -> pd.Series:
     return result
 
 
+def _derive_coda_duration(df: pd.DataFrame) -> pd.Series:
+    """Coda duration in seconds: sum of ICI1..ICI(n_clicks-1).
+
+    ICIs past n_clicks-1 are NaN in the source data, so summing all ICI columns
+    with min_count=1 gives the correct total (NaN only when all ICIs are absent).
+    """
+    ici_cols = [f"ICI{i}" for i in range(1, _MAX_CLICKS + 1) if f"ICI{i}" in df.columns]
+    return df[ici_cols].sum(axis=1, min_count=1)
+
+
+def _ici_bin_edges(df: pd.DataFrame) -> dict:
+    """Per-ICI-position quantile bin edges computed across all coda lengths."""
+    import numpy as np
+    edges: dict = {}
+    for pos in range(1, _MAX_CLICKS):
+        col = f"ICI{pos}"
+        if col not in df.columns:
+            break
+        vals = df[col].dropna().values
+        if len(vals) < _N_BINS * 10:
+            continue
+        e = np.unique(np.percentile(vals, np.linspace(0, 100, _N_BINS + 1)))
+        if len(e) > 1:
+            edges[col] = e
+    return edges
+
+
+def _ici_row_to_string(row, edges: dict) -> str | None:
+    """Convert one coda row's ICI values to an ABCD symbol string."""
+    import numpy as np
+    n = row.get("n_clicks")
+    if pd.isna(n) or not (_MIN_CLICKS <= int(n) <= _MAX_CLICKS):
+        return None
+    symbols = []
+    for pos in range(1, int(n)):
+        col = f"ICI{pos}"
+        val = row.get(col, np.nan)
+        if pd.isna(val):
+            break
+        if col not in edges:
+            symbols.append("C")
+            continue
+        e = edges[col]
+        idx = max(0, min(int(np.searchsorted(e[1:-1], val)), _N_BINS - 1))
+        symbols.append(_LABELS[idx])
+    return "".join(symbols) if symbols else None
+
+
+def _derive_morpheme_seq(df: pd.DataFrame) -> pd.Series:
+    """Morfessor morpheme segmentation of each coda's ICI symbol string.
+
+    Each ICI is discretised to one of four symbols (A–D) using per-position
+    quantile bin edges computed from the full unified corpus.  Morfessor
+    Baseline then segments the resulting string into sub-units (morphemes).
+    The column stores the morphemes space-joined, e.g. 'BCC AB'.
+
+    The trained model is cached at data/morfessor_n4.bin; delete that file to
+    force a full retrain (needed when the unified corpus changes substantially).
+
+    NaN for codas outside the 3–40 click range or with missing ICI data.
+    """
+    import morfessor
+    from collections import Counter
+
+    valid_mask = df["n_clicks"].notna() & df["n_clicks"].between(_MIN_CLICKS, _MAX_CLICKS)
+    edges = _ici_bin_edges(df[valid_mask].copy())
+
+    # Build ICI string for every row
+    ici_strings: list = []
+    for _, row in df.iterrows():
+        ici_strings.append(_ici_row_to_string(row, edges))
+
+    corpus: Counter = Counter(s for s in ici_strings if s is not None)
+
+    mio = morfessor.MorfessorIO()
+    if _MORFESSOR_PATH.exists():
+        model = mio.read_binary_model_file(str(_MORFESSOR_PATH))
+        print(f"  Loaded Morfessor model from {_MORFESSOR_PATH.relative_to(REPO)}")
+    else:
+        print(f"  Training Morfessor on {len(corpus)} ICI string types …")
+        model = morfessor.BaselineModel()
+        model.load_data([(cnt, w) for w, cnt in corpus.items()])
+        model.train_batch()
+        _MORFESSOR_PATH.parent.mkdir(parents=True, exist_ok=True)
+        mio.write_binary_model_file(str(_MORFESSOR_PATH), model)
+        print(f"  Saved to {_MORFESSOR_PATH.relative_to(REPO)}")
+
+    segs: dict = {}
+    for s in corpus:
+        morphs, _ = model.viterbi_segment(s)
+        segs[s] = " ".join(morphs)
+
+    n_types = len(segs)
+    avg_len = sum(len(v.split()) for v in segs.values()) / n_types if n_types else 0
+    print(f"  Morpheme vocab: {n_types} ICI string types, avg {avg_len:.2f} morphemes/coda")
+
+    return pd.Series(
+        [segs.get(s) if s is not None else None for s in ici_strings],
+        index=df.index,
+        dtype="object",
+    )
+
+
+def _derive_year_normalized(df: pd.DataFrame) -> pd.Series:
+    """Year scaled to [0, 1] across the full corpus.
+
+    Year is extracted from the `date` column as the first 4-digit sequence
+    (handles all mixed formats: DD/MM/YYYY, YYYY-MM-DD, ISO datetimes).
+    0 = oldest year in the corpus, 1 = newest.  NaN where `date` is absent.
+    """
+    yr = df["date"].str.extract(r"(\d{4})")[0].astype(float)
+    yr_min, yr_max = yr.min(), yr.max()
+    return (yr - yr_min) / (yr_max - yr_min)
+
+
 def _derive_unique_whales(df: pd.DataFrame) -> pd.Series:
     """Count unique whales per sequence.
 
@@ -440,6 +562,9 @@ def main():
     df["codas_per_10min"] = _derive_coda_rate(df)
     df["likely_solitary_male"] = _derive_likely_solitary_male(df)
     df["n_unique_whales_in_sequence"] = _derive_unique_whales(df)
+    df["year_normalized"] = _derive_year_normalized(df)
+    df["coda_duration_s"] = _derive_coda_duration(df)
+    df["morpheme_seq"] = _derive_morpheme_seq(df)
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(OUT, index=False)
@@ -456,7 +581,10 @@ def main():
                is_other_terr_n=("is_in_other_clan_territory", lambda s: s.notna().sum()),
                with_coda_rate=("codas_per_10min", lambda s: s.notna().sum()),
                likely_solitary_male_n=("likely_solitary_male", lambda s: s.notna().sum()),
-               with_unique_whales=("n_unique_whales_in_sequence", lambda s: s.notna().sum()))
+               with_unique_whales=("n_unique_whales_in_sequence", lambda s: s.notna().sum()),
+               with_year_normalized=("year_normalized", lambda s: s.notna().sum()),
+               with_coda_duration=("coda_duration_s", lambda s: s.notna().sum()),
+               with_morpheme_seq=("morpheme_seq", lambda s: s.notna().sum()))
     )
     print(f"merge_unified: wrote {len(df):,} rows -> {OUT.relative_to(REPO)}")
     print(summary.to_string())

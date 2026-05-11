@@ -11,10 +11,9 @@ Only the ~3,317 rows whose ICI fingerprint does NOT appear in the Hersh 2022
 Pacific dataset are loaded here; the remainder are already represented in
 hersh2022_pacific and are enriched in F_load_hersh_pacific.py.
 
-Clan labels are kept as-is from the ETP file (Regular, Short, FourPlus,
-PlusOne, Caribbean, Tonga) since the exact correspondence to Hersh clan codes
-(REG, SH, FP, PO, PALI, …) is uncertain.
-
+Clan labels are kept as-is from the ETP file for Caribbean, Tonga. 
+REG, SH, FP, PO are converted to standardized Bermant Regular, Short, FourPlus,
+PlusOne.
 The ETP file does not carry per-coda location coordinates, so latitude and
 longitude are NaN. Location is set to "Eastern Tropical Pacific" for all
 rows (the Caribbean and Tonga clans were recorded in the ETP field area).
