@@ -522,6 +522,110 @@ def _derive_unique_whales(df: pd.DataFrame) -> pd.Series:
     return result
 
 
+def _merge_nearby_recordings(df: pd.DataFrame, gap_hours: float = 4.0) -> pd.DataFrame:
+    """Merge recording IDs within the same source+location whose sessions are close in time.
+
+    Two recordings are merged when the last coda of the earlier one is fewer than
+    gap_hours before the first coda of the later one.  The canonical recording_id
+    for the merged group is the ID of the earliest recording.
+
+    Sources handled (those with per-coda absolute timestamps):
+      hersh2022_pacific  — ISO datetime in `date` col (rows containing "T")
+      sharma2025_birth   — ISO datetime in `date` col (rows containing "T")
+      begus2026_vowel    — recording start in `recording_id` + time_in_recording_s offset
+
+    All other sources lack sub-day timestamps and are left unchanged.
+    """
+    gap_s = gap_hours * 3600.0
+
+    # Compute UTC Unix seconds for each coda where possible.
+    abs_time_s = pd.Series(pd.NA, index=df.index, dtype="Float64")
+
+    for src in ("hersh2022_pacific", "sharma2025_birth"):
+        mask = (df["source"] == src) & df["date"].str.contains("T", na=False)
+        if mask.any():
+            parsed = pd.to_datetime(df.loc[mask, "date"], format="ISO8601", utc=True, errors="coerce")
+            abs_time_s.loc[mask] = parsed.astype("int64") / 1e9
+
+    mask = (
+        (df["source"] == "begus2026_vowel")
+        & df["recording_id"].notna()
+        & df["time_in_recording_s"].notna()
+    )
+    if mask.any():
+        rec_dt = pd.to_datetime(df.loc[mask, "recording_id"], utc=True, errors="coerce")
+        valid = rec_dt.notna()
+        if valid.any():
+            valid_idx = rec_dt.index[valid]
+            abs_time_s.loc[valid_idx] = (
+                rec_dt.loc[valid].astype("int64") / 1e9
+                + df.loc[valid_idx, "time_in_recording_s"].astype(float)
+            )
+
+    df = df.copy()
+    total_merged = 0
+
+    for (source, location), grp_idx in df.groupby(
+        ["source", "location"], dropna=False, sort=False
+    ).groups.items():
+        sub = df.loc[grp_idx]
+        sub_time = abs_time_s.loc[grp_idx]
+
+        has_data = sub["recording_id"].notna() & sub_time.notna()
+        if not has_data.any():
+            continue
+
+        sub_data = sub.loc[has_data].copy()
+        sub_data["_t"] = sub_time.loc[has_data].astype(float)
+
+        rec_stats = sub_data.groupby("recording_id")["_t"].agg(["min", "max"])
+        rec_stats = rec_stats.sort_values("min")
+
+        if len(rec_stats) < 2:
+            continue
+
+        # Greedy forward merge.
+        groups: list[list] = []
+        current_group = [rec_stats.index[0]]
+        current_max = float(rec_stats["max"].iloc[0])
+
+        for i in range(1, len(rec_stats)):
+            rec_id = rec_stats.index[i]
+            rec_min = float(rec_stats["min"].iloc[i])
+            rec_max = float(rec_stats["max"].iloc[i])
+            if rec_min - current_max < gap_s:
+                current_group.append(rec_id)
+                current_max = max(current_max, rec_max)
+            else:
+                groups.append(current_group)
+                current_group = [rec_id]
+                current_max = rec_max
+        groups.append(current_group)
+
+        merge_map: dict = {}
+        for g in groups:
+            if len(g) > 1:
+                canonical = g[0]
+                for rec_id in g[1:]:
+                    merge_map[rec_id] = canonical
+
+        if merge_map:
+            update_mask = sub["recording_id"].isin(merge_map.keys()).values
+            update_idx = grp_idx[update_mask]
+            df.loc[update_idx, "recording_id"] = (
+                df.loc[update_idx, "recording_id"].map(merge_map)
+            )
+            n_merged = len(merge_map)
+            total_merged += n_merged
+            print(
+                f"  {source} / {location}: "
+                f"merged {n_merged} recording IDs into {len(groups)} sessions"
+            )
+
+    print(f"_merge_nearby_recordings: {total_merged} recording IDs merged total")
+    return df
+
+
 def main():
     loaders = [
         (A_load_dswp, "A_dswp.csv"),
@@ -544,6 +648,7 @@ def main():
     df = df[UNIFIED_COLUMNS]  # enforce column order
 
     df = _apply_whale_grammar_coda_types(df)
+    df = _merge_nearby_recordings(df)
 
     _RECORDING_METHOD: dict[str, str] = {
         "sharma2024_dswp":   "vessel",
