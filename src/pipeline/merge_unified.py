@@ -666,6 +666,96 @@ def _merge_nearby_recordings(df: pd.DataFrame, gap_hours: float = 4.0) -> pd.Dat
     return df
 
 
+def _assign_synthetic_recording_ids(df: pd.DataFrame, gap_hours: float = 4.0) -> pd.DataFrame:
+    """Assign REC{N:04d} IDs to rows where recording_id is null.
+
+    Sessions are defined per source+location:
+      - ISO timestamps in date  → 4-hour gap merging
+      - day-only dates          → one session per calendar day
+      - no date at all          → one session per row
+
+    All sessions are sorted globally by earliest timestamp (no-date sessions last)
+    and assigned REC0001, REC0002, ... in that order.
+    """
+    null_mask = df["recording_id"].isna()
+    if not null_mask.any():
+        return df
+
+    df = df.copy()
+    gap_s = gap_hours * 3600.0
+
+    # (min_abs_time_s, list_of_df_indices) for every synthetic session
+    sessions: list[tuple[float, list]] = []
+
+    null_sub = df.loc[null_mask].copy()
+
+    # Compute abs time where possible
+    has_iso = null_sub["date"].str.contains("T", na=False)
+    abs_t = pd.Series(float("inf"), index=null_sub.index)
+    if has_iso.any():
+        parsed = pd.to_datetime(
+            null_sub.loc[has_iso, "date"], format="ISO8601", utc=True, errors="coerce"
+        )
+        abs_t.loc[has_iso] = parsed.astype("int64") / 1e9
+
+    for (source, location), grp_idx in null_sub.groupby(
+        ["source", "location"], dropna=False, sort=False
+    ).groups.items():
+        sub = null_sub.loc[grp_idx]
+        sub_t = abs_t.loc[grp_idx]
+
+        has_time = sub_t < float("inf")
+
+        # --- ISO-timestamped rows: 4-hour gap session splitting ---
+        if has_time.any():
+            iso_rows = sub.loc[has_time]
+            iso_t = sub_t.loc[has_time]
+            order = iso_t.argsort()
+            sorted_idx = iso_t.index[order]
+            sorted_t = iso_t.iloc[order].values
+
+            session_rows: list = [sorted_idx[0]]
+            session_min_t: float = sorted_t[0]
+            prev_t: float = sorted_t[0]
+
+            for i in range(1, len(sorted_t)):
+                if sorted_t[i] - prev_t < gap_s:
+                    session_rows.append(sorted_idx[i])
+                else:
+                    sessions.append((session_min_t, session_rows))
+                    session_rows = [sorted_idx[i]]
+                    session_min_t = sorted_t[i]
+                prev_t = sorted_t[i]
+            sessions.append((session_min_t, session_rows))
+
+        # --- Day-only or no-date rows: one session per unique date (or per row) ---
+        no_time_sub = sub.loc[~has_time]
+        if not no_time_sub.empty:
+            for date_val, date_grp in no_time_sub.groupby("date", dropna=False):
+                if pd.isna(date_val):
+                    # no date at all — one synthetic session per row
+                    for idx in date_grp.index:
+                        sessions.append((float("inf"), [idx]))
+                else:
+                    # parse day-only date for rough global ordering
+                    try:
+                        day_t = pd.to_datetime(date_val, dayfirst=True, utc=True).timestamp()
+                    except Exception:
+                        day_t = float("inf")
+                    sessions.append((day_t, list(date_grp.index)))
+
+    # Sort all sessions by earliest timestamp (inf last)
+    sessions.sort(key=lambda x: x[0])
+
+    n_digits = max(4, len(str(len(sessions))))
+    for i, (_, idx_list) in enumerate(sessions, start=1):
+        rec_id = f"REC{i:0{n_digits}d}"
+        df.loc[idx_list, "recording_id"] = rec_id
+
+    print(f"_assign_synthetic_recording_ids: assigned {len(sessions)} synthetic REC IDs")
+    return df
+
+
 def main():
     loaders = [
         (A_load_dswp, "A_dswp.csv"),
@@ -689,6 +779,7 @@ def main():
 
     df = _apply_whale_grammar_coda_types(df)
     df = _merge_nearby_recordings(df)
+    df = _assign_synthetic_recording_ids(df)
 
     _RECORDING_METHOD: dict[str, str] = {
         "sharma2024_dswp":   "vessel",
