@@ -529,10 +529,12 @@ def _merge_nearby_recordings(df: pd.DataFrame, gap_hours: float = 4.0) -> pd.Dat
     gap_hours before the first coda of the later one.  The canonical recording_id
     for the merged group is the ID of the earliest recording.
 
-    Sources handled (those with per-coda absolute timestamps):
-      hersh2022_pacific  — ISO datetime in `date` col (rows containing "T")
-      sharma2025_birth   — ISO datetime in `date` col (rows containing "T")
-      begus2026_vowel    — recording start in `recording_id` + time_in_recording_s offset
+    After merging, time_in_recording_s is made continuous across the session:
+      begus2026_vowel   — non-canonical codas' time_in_recording_s is shifted by
+                          (nc_recording_start − canonical_recording_start) so the
+                          inter-session gap is preserved on the time axis.
+      hersh2022_pacific — time_in_recording_s is filled from per-coda abs datetime
+      sharma2025_birth  — (same as above); previously NaN for these sources
 
     All other sources lack sub-day timestamps and are left unchanged.
     """
@@ -610,6 +612,23 @@ def _merge_nearby_recordings(df: pd.DataFrame, gap_hours: float = 4.0) -> pd.Dat
                     merge_map[rec_id] = canonical
 
         if merge_map:
+            # Fix time_in_recording_s for begus before updating recording_id.
+            # Each non-canonical recording's start is offset from the canonical
+            # start by a known number of seconds; add that to time_in_recording_s
+            # so the time axis is continuous across the merged session.
+            if source == "begus2026_vowel":
+                for nc_id, c_id in merge_map.items():
+                    canonical_start_s = pd.to_datetime(c_id, utc=True).timestamp()
+                    nc_start_s = pd.to_datetime(nc_id, utc=True).timestamp()
+                    offset_s = nc_start_s - canonical_start_s
+                    nc_mask = sub["recording_id"] == nc_id
+                    nc_idx = grp_idx[nc_mask.values]
+                    has_t = df.loc[nc_idx, "time_in_recording_s"].notna().values
+                    if has_t.any():
+                        df.loc[nc_idx[has_t], "time_in_recording_s"] = (
+                            df.loc[nc_idx[has_t], "time_in_recording_s"] + offset_s
+                        )
+
             update_mask = sub["recording_id"].isin(merge_map.keys()).values
             update_idx = grp_idx[update_mask]
             df.loc[update_idx, "recording_id"] = (
@@ -620,6 +639,27 @@ def _merge_nearby_recordings(df: pd.DataFrame, gap_hours: float = 4.0) -> pd.Dat
             print(
                 f"  {source} / {location}: "
                 f"merged {n_merged} recording IDs into {len(groups)} sessions"
+            )
+
+    # For hersh2022_pacific and sharma2025_birth, time_in_recording_s was NaN
+    # because each recording had no explicit start-time anchor.  Now that
+    # recording_ids are merged, fill it from the per-coda abs datetime so the
+    # inter-session gap is properly represented on the time axis.
+    for src in ("hersh2022_pacific", "sharma2025_birth"):
+        src_mask = df["source"] == src
+        if not src_mask.any():
+            continue
+        sub = df.loc[src_mask]
+        sub_abs = abs_time_s.loc[src_mask]
+        for rec_id, rec_idx in sub.groupby("recording_id").groups.items():
+            rec_abs = sub_abs.loc[rec_idx]
+            valid = rec_abs.notna()
+            if not valid.any():
+                continue
+            session_start_s = float(rec_abs[valid].min())
+            valid_idx = rec_idx[valid.values]
+            df.loc[valid_idx, "time_in_recording_s"] = (
+                rec_abs[valid].astype(float) - session_start_s
             )
 
     print(f"_merge_nearby_recordings: {total_merged} recording IDs merged total")
