@@ -543,7 +543,7 @@ def _merge_nearby_recordings(df: pd.DataFrame, gap_hours: float = 4.0) -> pd.Dat
     # Compute UTC Unix seconds for each coda where possible.
     abs_time_s = pd.Series(pd.NA, index=df.index, dtype="Float64")
 
-    for src in ("hersh2022_pacific", "sharma2025_birth"):
+    for src in ("hersh2022_pacific", "sharma2025_birth", "bermant2019_etp"):
         mask = (df["source"] == src) & df["date"].str.contains("T", na=False)
         if mask.any():
             parsed = pd.to_datetime(df.loc[mask, "date"], format="ISO8601", utc=True, errors="coerce")
@@ -645,7 +645,7 @@ def _merge_nearby_recordings(df: pd.DataFrame, gap_hours: float = 4.0) -> pd.Dat
     # because each recording had no explicit start-time anchor.  Now that
     # recording_ids are merged, fill it from the per-coda abs datetime so the
     # inter-session gap is properly represented on the time axis.
-    for src in ("hersh2022_pacific", "sharma2025_birth"):
+    for src in ("hersh2022_pacific", "sharma2025_birth", "bermant2019_etp"):
         src_mask = df["source"] == src
         if not src_mask.any():
             continue
@@ -748,9 +748,18 @@ def _assign_synthetic_recording_ids(df: pd.DataFrame, gap_hours: float = 4.0) ->
     sessions.sort(key=lambda x: x[0])
 
     n_digits = max(4, len(str(len(sessions))))
-    for i, (_, idx_list) in enumerate(sessions, start=1):
+    for i, (session_min_t, idx_list) in enumerate(sessions, start=1):
         rec_id = f"REC{i:0{n_digits}d}"
         df.loc[idx_list, "recording_id"] = rec_id
+        # Fill time_in_recording_s for ISO-timestamped sessions so Δt is
+        # computable: offset = coda_abs_time − session_start.
+        if session_min_t < float("inf"):
+            coda_abs = abs_t.loc[idx_list]
+            valid = coda_abs < float("inf")
+            if valid.any():
+                df.loc[coda_abs.index[valid], "time_in_recording_s"] = (
+                    coda_abs[valid].astype(float) - session_min_t
+                )
 
     print(f"_assign_synthetic_recording_ids: assigned {len(sessions)} synthetic REC IDs")
     return df
