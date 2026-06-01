@@ -69,9 +69,11 @@ You must cite the underlying source publications when using this data.
     Data: OSF https://osf.io/5fter/ (IDcallR_SpermWhaleCodas.csv)
     License: CC BY-NC-ND (paper); OSF deposit shows "No License" for the
     data file itself. Under the most conservative reading, CC BY-NC-ND
-    applies — meaning non-commercial use only and no derivatives.
-    WARNING: the pipeline filters and transforms this data (derivative use).
-    Redistribution of the processed output may require explicit author
-    permission. Contact: taylor.a.hersh@gmail.com
+    applies — non-commercial use only, no derivatives.
+    Note: this file is not included in the repo; download it from OSF and
+    place it at data/raw/IDcallR_SpermWhaleCodas.csv before running the
+    pipeline. Contact taylor.a.hersh@gmail.com with redistribution questions.
 
-License text: https://creativecommons.org/licenses/by/4.0/
+The CC BY 4.0 license text (https://creativecommons.org/licenses/by/4.0/)
+applies to the aggregation, schema, and pipeline code in this repository.
+Each source dataset retains its own upstream license as noted above.
