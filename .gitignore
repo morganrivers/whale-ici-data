@@ -9,6 +9,7 @@ venv/
 
 # IDcallR data: CC BY-NC-ND, no redistribution without author permission
 data/raw/IDcallR_SpermWhaleCodas.csv
+data/intermediate/H_idcallr.csv
 
 # Generated outputs — too large / contain IDcallR-derived rows
 data/unified/
