@@ -62,6 +62,14 @@ whale-ici-data/
 
 ## Reproduce
 
+Most raw files are included in this repo. One file must be downloaded manually before running the pipeline:
+
+| File | Source | Reason not included |
+|---|---|---|
+| `data/raw/IDcallR_SpermWhaleCodas.csv` | [OSF osf.io/5fter](https://osf.io/5fter/) | CC BY-NC-ND license; no redistribution without author permission |
+
+Download `IDcallR_SpermWhaleCodas.csv` from the OSF project and place it at `data/raw/IDcallR_SpermWhaleCodas.csv`, then run:
+
 ```bash
 pip install -r requirements.txt
 python -m src.pipeline.merge_unified
