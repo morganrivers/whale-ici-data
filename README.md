@@ -23,7 +23,7 @@ expand or replace those definitions per dataset.
 | `sharma2025_birth` — Sharma et al. 2025 ([Sci Rep](https://doi.org/10.1038/s41598-025-27438-3)) | 5,731 | Dominica, single live-birth event | 0 (within-recording speaker tags only) | 2023 |
 | `hersh2022_pacific` — Hersh et al. 2022 ([PNAS](https://doi.org/10.1073/pnas.2201692119), [OSF](https://osf.io/ae6pd/)) | 24,237 | Pacific (23 regions, 7 clans: FP, PALI, PO, REG, RI, SH, SI) | 0 (no persistent IDs in this release) | 1978-2017 |
 | `hersh2021_idcallr` — Hersh et al. 2021 ([MEE](https://doi.org/10.1111/2041-210X.13644)) | 4,269 | Eastern Caribbean + Watkins archive | 0 | 1978-2019 |
-| `begus2026_vowel` — Beguš et al. 2026 ([OSF 9t6qu](https://osf.io/9t6qu/)) | 1,375 | Dominica, Eastern Caribbean | 13 (1,267 codas attributed) | 2014-2016 |
+| `begus2026_vowel` — Beguš et al. 2026 ([RSPB](https://doi.org/10.1098/rspb.2025.2994), [OSF 9t6qu](https://osf.io/9t6qu/)) | 1,375 | Dominica, Eastern Caribbean | 13 (1,267 codas attributed) | 2014-2016 |
 | `bermant2019_etp` — Bermant et al. 2019 ([Sci Rep 9:12588](https://doi.org/10.1038/s41598-019-48909-4)) | 3,450 | Eastern Tropical Pacific (6 clan types: Regular, Short, FourPlus, PlusOne, Caribbean, Tonga) | 0 | 1985-2014 |
 | **Unified** | **47,942** | | | |
 
