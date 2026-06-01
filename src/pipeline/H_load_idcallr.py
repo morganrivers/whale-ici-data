@@ -2,8 +2,8 @@
 
 Source: Hersh, T.A. et al. (2021). Using identity calls to detect structure in
 acoustic datasets. Methods in Ecology and Evolution 12(7).
-DOI: 10.1111/2041-210X.13524
-Data: IDcallR_SpermWhaleCodas.csv (companion to the IDcallR R package)
+DOI: 10.1111/2041-210X.13644
+Data: IDcallR_SpermWhaleCodas.csv, OSF https://osf.io/5fter/ (no license declared)
 
 We include only locations NOT already covered by hersh2022_pacific (which is
 more complete and carries clan labels and coordinates). The inclusions are:
@@ -76,7 +76,7 @@ def load() -> pd.DataFrame:
 
         unified = {
             "source":             "hersh2021_idcallr",
-            "source_doi":         "10.1111/2041-210X.13524",
+            "source_doi":         "10.1111/2041-210X.13644",
             "source_coda_id":     str(r["codanum"]),
             "recording_id":       str(int(r["grpvar"])),
             "date":               str(r["date"]),

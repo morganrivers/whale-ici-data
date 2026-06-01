@@ -1,30 +1,77 @@
 Creative Commons Attribution 4.0 International (CC BY 4.0)
 
-This repository aggregates publicly released sperm whale coda datasets, all of
-which are themselves distributed under CC BY (or CC0 / Dryad equivalents) by
-their original authors. The aggregation, schema, and pipeline code are also
-released under CC BY 4.0.
+The aggregation, schema, and pipeline code in this repository are released
+under CC BY 4.0.
+
+The underlying source datasets have varying license terms (see per-dataset
+notes below). The "all CC BY" shorthand does not apply to all sources.
 
 Attribution requirements:
 
-You must cite the underlying source publications when using this data:
+You must cite the underlying source publications when using this data.
+
+--- CC BY 4.0 sources ---
 
   - Sharma, P., Gero, S., Payne, R., Gruber, D. F., Rus, D., Torralba, A.,
     & Andreas, J. (2024). Contextual and combinatorial structure in sperm
     whale vocalisations. Nature Communications, 15(1), 3617.
     doi:10.1038/s41467-024-47221-8
+    License: CC BY 4.0 (Nature Communications open access)
 
-  - Sharma, P., et al. (2025). [Sperm whale live birth coda recordings].
+  - Sharma, P., et al. (2025). Sperm whale live birth coda recordings.
     Scientific Reports. doi:10.1038/s41598-025-27438-3
+    License: CC BY 4.0 (Scientific Reports open access)
+
+  - Bermant, P. C., Bronstein, M. M., Wood, R. J., Gero, S., & Gruber, D. F.
+    (2019). Deep machine learning techniques for the detection and
+    classification of sperm whale bioacoustics. Scientific Reports, 9, 12588.
+    doi:10.1038/s41598-019-48909-4
+    Data files: 41598_2019_48909_MOESM2_ESM.xlsx, ETP.xlsx (MOESM3)
+    License: CC BY 4.0 (Scientific Reports open access)
+
+--- CC0 sources (Dryad) ---
 
   - Gero, S., Bottcher, A., Whitehead, H., & Madsen, P. T. (2016). Socially
     segregated, sympatric sperm whale clans in the Atlantic Ocean. Royal
     Society Open Science, 3(6), 160061.
     Data: Dryad doi:10.5061/dryad.53g73
+    License: CC0 (Dryad default)
 
   - Gero, S., Whitehead, H., & Rendell, L. (2016). Individual, unit and vocal
     clan level identity cues in sperm whale codas. Royal Society Open
     Science, 3(1), 150372.
     Data: Dryad doi:10.5061/dryad.ck4h0
+    License: CC0 (Dryad default)
+    Note: raw file present in data/raw/ but not used by the current pipeline.
+
+--- No explicit license declared (OSF deposits) ---
+
+  - Hersh, T. A., Gero, S., Rendell, L., & Whitehead, H. (2022). Evidence
+    from sperm whale clans of symbolic marking in non-human cultures.
+    Proceedings of the National Academy of Sciences, 119(37), e2201692119.
+    doi:10.1073/pnas.2201692119
+    Data: OSF https://osf.io/ae6pd/
+    License: The OSF deposit carries no declared license. The PNAS paper is
+    open access (CC BY 4.0). Users who redistribute this data should
+    verify current terms on the OSF deposit page.
+
+  - Beguš, G., et al. (2026). The phonology of sperm whale coda vowels.
+    Data: OSF https://osf.io/9t6qu/
+    License: The OSF deposit carries no declared license. Users who
+    redistribute this data should verify current terms on the OSF deposit
+    page and cite the associated publication.
+
+--- CC BY-NC-ND (non-commercial, no derivatives) ---
+
+  - Hersh, T. A., Gero, S., Rendell, L., & Whitehead, H. (2021). Using
+    identity calls to detect structure in acoustic datasets. Methods in
+    Ecology and Evolution, 12(7). doi:10.1111/2041-210X.13644
+    Data: OSF https://osf.io/5fter/ (IDcallR_SpermWhaleCodas.csv)
+    License: CC BY-NC-ND (paper); OSF deposit shows "No License" for the
+    data file itself. Under the most conservative reading, CC BY-NC-ND
+    applies — meaning non-commercial use only and no derivatives.
+    WARNING: the pipeline filters and transforms this data (derivative use).
+    Redistribution of the processed output may require explicit author
+    permission. Contact: taylor.a.hersh@gmail.com
 
 License text: https://creativecommons.org/licenses/by/4.0/
