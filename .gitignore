@@ -6,3 +6,9 @@ venv/
 .env
 .ipynb_checkpoints/
 .DS_Store
+
+# IDcallR data: CC BY-NC-ND, no redistribution without author permission
+data/raw/IDcallR_SpermWhaleCodas.csv
+
+# Generated outputs — too large / contain IDcallR-derived rows
+data/unified/
